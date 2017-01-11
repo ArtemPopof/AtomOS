@@ -8,11 +8,11 @@ To instal AtomOS on your computer please, do following steps.
 
 FAQ:
 
------------------------------
+------------------------------
 
 How to burn into usb drive (Linux required or dd for windows):
 
------------------------------
+------------------------------
 
 1. Go to AtomOS/boot 
 2. Find out your flash drive name with lsblk or other tools (if you're in Linux)
