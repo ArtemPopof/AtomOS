@@ -33,7 +33,7 @@ align 4
 label sector_per_track word at $$ 
 label head_count byte at $$ + 2 
 label	disk_id byte at $$ + 3
-boot_msg db "AtomOS boot loader. Version 0.01", 13, 10, 0
+boot_msg db "AtomOS boot loader. Version 0.02", 13, 10, 0
 reboot_msg db "Press any key...", 13, 10, 0
 
 ;==================================
