@@ -5,7 +5,8 @@ To instal AtomOS on your computer please, do following steps.
 2. Write boot.bin on your floppy drive, or more likely on usb with any available tool, such as dd in linux. 
 
 3. Enjoy AtomOS. Any harm to your computer is your fault, man.
-
+ 
+ 
 FAQ:
 
 ------------------------------
