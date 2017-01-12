@@ -24,17 +24,47 @@
 
 org	0x7C00
 
-jmp	word boot
+jmp boot
 
 ;===============DATA===============
 
 align 4
 
+; ListFS header 
+
+fs_magic 		dd 	?
+fs_version		dd 	?
+fs_flags		dd 	?
+fs_base 		dd 	?
+fs_size 		dq	?
+fs_map_base 	dq 	?
+fs_map_size		dq 	?
+fs_first_file	dq 	?
+fs_uid			dq 	?
+fs_block_size	dd 	?
+
+; File header 
+virtual at 0x800 
+f_info: 
+	
+	f_name 		rb 	256
+	f_next 		dq 	?
+	f_prev		dq 	?
+	f_parent	dq 	?
+	f_flags 	dq 	?
+	f_data 		dq	?
+	f_size 		dq 	? 
+	f_ctime		dq 	? 
+	f_mtime 	dq 	?
+	f_atime 	dq 	?
+
+end virtual 
+
 label sector_per_track word at $$ 
 label head_count byte at $$ + 2 
 label	disk_id byte at $$ + 3
-boot_msg db "AtomOS boot loader. Version 0.02", 13, 10, 0
-reboot_msg db "Press any key...", 13, 10, 0
+reboot_msg db "Reboot. Press any key...", 13, 10, 0
+boot_file_name db "boot.bin"
 
 ;==================================
 
@@ -166,6 +196,122 @@ load_sector:
 		pop 	si dx ax 
 		ret 		
 
+;------------------------
+; find_file:
+;
+; Search file with name DS:SI 
+; in cat DX:AX 
+;
+;------------------------
+
+find_file:
+
+		push 	cx dx di 
+
+.find:	
+		cmp 	ax, -1 					; end of list check 
+		jne 	@f 
+		cmp 	dx, -1 
+		jne 	@f 
+
+.not_found: ; EOL reached, it's very bad 
+
+		call 	error 
+		db 		"NOT FOUND", 13, 10, 0
+
+@@:
+
+		mov 	di, f_info 
+		call 	load_sector				; load file info in buffer 
+
+		; calc file name length 
+		push 	di
+
+		mov 	cx, 0xFFFF
+		xor 	al, al 
+		repne 	scasb 
+		neg 	cx 
+		dec 	cx						; now cx contains file name length
+
+		pop	 	di 
+		push 	si 	
+		repe 	cmpsb 
+		pop 	si 
+		je 		.found 					
+
+		mov 	ax, word[f_next]		; load next file number
+		mov 	dx, word[f_next + 2]
+		jmp 	.find
+
+.found:
+
+		pop 	di dx cx 
+		ret 		
+
+;------------------------
+; load_file_data
+;
+; Load current file data to 
+; BX:0. 
+;
+; ret: ax - loaded sectors count 
+;------------------------ 
+
+load_file_data:
+
+		push 	bx cx dx si di 
+
+		mov 	ax, word[f_data]
+		mov 	dx, word[f_data + 2] 	; load in DX:AX sector with first list 
+
+	.load_list:
+
+		cmp 	ax, -1
+		jne 	@f
+		cmp 	dx, -1 
+		jne 	@f 
+
+	.file_end:
+
+		pop 	di si dx cx 
+
+		mov 	ax, bx 
+		pop 	bx 
+		sub 	ax, bx 					; ax - loaded sectors count
+		shr 	ax, 9 - 4 				; actuall conversion to sectors 
+		ret 
+
+	@@:
+
+		mov 	di, f_info 
+		call 	load_sector 
+		mov 	si, di 
+		mov 	cx, 512 / 8 - 1 		; sectors in list
+
+	.load_sector:
+
+		lodsw 							; load next sector number 
+		mov 	dx, [si] 
+		add 	si, 2 
+		cmp 	ax, -1 
+		jne 	@f 
+		cmp 	dx, -1
+		je 		.file_end				; end of file
+
+	@@:
+
+		push 	es 
+		mov 	es, bx 
+		call 	load_sector 
+		add 	bx, 0x200 / 16 			; offset for next segment
+
+		pop 	es 
+		loop	.load_sector 
+
+		lodsw 							; DX:AX - next list number 
+		mov 	dx, [si]
+		jmp 	.load_list  
+
 ;==================================
 
 
@@ -216,10 +362,36 @@ boot:
 .disk_detected:
 
 		; load next sector to next 512 bytes
-		xor 	dx, dx 
-		mov 	ax, 1 
-		mov 	di, 0x7E00 
-		call 	load_sector
+		mov 	si, boot_file_name 
+		mov 	ax, word[fs_first_file]
+		mov 	dx, word[fs_first_file + 2]
+		call 	find_file
+
+		mov 	di, 0x7E00 / 16 
+		call 	load_file_data 
+
+		; go to next segment of boot loader 
+		jmp 	0x7E00
+
+;==================================
+
+; Empty space and sign 
+rb 	510 - ($ - $$) 
+db 	0x55, 0xAA 
+
+jmp 	next_entry
+
+
+;===============DATA===============
+
+boot_msg 	db	"AtomOS version 0.03 boot loader...", 13, 10, 0
+
+;==================================
+
+
+;===============ENTRY==============
+
+next_entry: 
 
 		; print hello mesage 
 		mov 	si, boot_msg 
@@ -229,8 +401,5 @@ boot:
 		; Reboot now 
 		jmp 	reboot 
 
+	
 ;==================================
-
-; Empty space and sign 
-rb 	510 - ($ - $$) 
-db 	0x55, 0xAA 

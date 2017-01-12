@@ -11,13 +11,23 @@ FAQ:
 
 ------------------------------
 
+How to make ListFS image
+
+------------------------------
+
+1. Copy listfs_maker.out from tools folder into root folder of AtomOS
+2. Open terminal and execute following command: ./listfs_maker.out size=10 of=boot.img src=root boot=/bin/AtomOS_boot_0.03.bin
+3. Output file boot.img can be burned to usb or floppy.
+
+------------------------------
+
 How to burn into usb drive (Linux required or dd for windows):
 
 ------------------------------
 
 1. Go to AtomOS/boot 
 2. Find out your flash drive name with lsblk or other tools (if you're in Linux)
-3. Do command "dd if=boot.bin of=/dev/xxx", where /dev/xxx is your flash drive (or maybe floppy) name, /dev/sdc for example.
+3. Do command "dd if=boot.img of=/dev/xxx", where /dev/xxx is your flash drive (or maybe floppy) name, /dev/sdc for example.
 4. Reboot from brand new AtomOS usb flash stick.
 
 
