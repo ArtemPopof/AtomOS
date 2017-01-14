@@ -408,6 +408,8 @@ split_file_name:
 		lodsb 
 		cmp 	al, "/"
 		je 		@f 
+		test 	al, al 
+		jz 		@f 
 		jmp 	@b 
 
 @@:
@@ -506,12 +508,180 @@ org 	0x8000
 jmp 	another_entry
 
 new_message 	db 	'This is next file that loaded right into memory and being executed', 13, 10, 0
+boot_vga_file_name db 'bootVga.bin', 0 
+config_file_name db "boot.cfg", 0
+start64_msg db 'Starting 64-bit kernel!...', 13, 10, 0
+start16_msg db 'Starting 16-bit kernel!...', 13, 10, 0
 
+;============routines==================
+
+;------------------------
+; parse_config
+;
+; Parse config file and 
+; start kernel 
+;------------------------
+
+parse_config: 
+
+		mov 	dx, 0x1000
+		mov 	di, 0x9000 / 16				; all modules will be loaded here 
+		mov 	bp, 0x6000					; module list will be here 		
+
+
+.parse_line:
+
+		mov 	si, dx 
+
+.parse_char:
+
+		lodsb 								;load from ds:si to al 
+		test 	al, al 
+		jz 		.config_end 
+		cmp 	al, 10 
+		je 		.run_command 
+		cmp 	al, 13 
+		je 		.run_command 
+		jmp 	.parse_char 
+
+.run_command:
+
+		mov 	byte[si - 1], 0 
+		xchg 	dx, si 						
+		cmp 	byte[si], 0
+		je 		.parse_line					; empty string 
+		cmp 	byte[si], '#'				; comment
+		je 		.parse_line 
+		cmp 	byte[si], 'L'
+		je 		.load_file 					; load module
+		cmp 	byte[si], 'S'
+		je 		.start_kernel				
+
+		; unknown command 
+		mov 	al, [si]
+		mov 	[.cmd], al 
+		call 	error 
+		db 		"Configuration script: unknown command '"
+		.cmd 	db ?
+		db 		"'!", 13, 10, 0
+
+.config_end: 	; if configuration script is valid, we don't get in here 
+
+		; rebooting 
+		jmp 	reboot 
+
+.load_file: 
+
+		push	dx 
+		inc 	si 
+
+		call 	load_file 
+
+		push	ax 
+		mov 	cx, 512 
+		mul 	cx 							 ; dx:ax - how much was loaded 
+		mov 	word[bp + 8], ax 
+		mov 	word[bp + 10], dx 
+		mov 	word[bp + 12], 0 
+		mov 	word[bp + 14], 0 
+		mov 	ax, di  
+		mov 	cx, 16 
+		mul 	cx 							  ; dx:ax - offset of loaded module 
+		mov 	word[bp], ax 
+		mov 	word[bp + 2], dx 
+		mov 	word[bp + 4], 0
+		mov 	word[bp + 6], 0 
+		pop 	ax 
+
+		shl 	ax, 9 - 4 				
+		add 	di, ax 
+		add 	bp, 16 
+		pop 	dx 
+		jmp 	.parse_line 
+
+; Start kernel 
+
+.start_kernel:
+
+		; check for at least one file loaded 
+		cmp 	di, 0x9000 / 16
+		ja 		@f 
+		call 	error 
+		db 		"NO KERNEL LOADED", 13, 10, 0
+
+@@:
+		; store last element of file list 
+		xor 	ax, ax 
+		mov 	cx, 16 
+		mov 	di, bp 
+		rep 	stosw 
+
+		; start initialization of kernel 
+		inc 	si 
+		cmp 	word[si], '16'
+		je 		.start16 
+		cmp 	word[si], '32'
+		je 		.start32
+		cmp 	word[si], '64'
+		je 		.start64
+
+		; unknown kernel type 
+		call 	error 
+		db 		"invalid kernel type argument", 13, 10, 0
+
+; Start of 16-bit kernel 
+
+.start16:
+
+		mov 	si, start16_msg
+		mov 	bx, 0x6000
+		mov 	dl, [disk_id]
+
+		jmp 	0x9000
+
+; Start of 32-bit kernel 
+.start32:
+		call 	error 
+		db 		"Starting 32 bit kernels is not impelemented yet", 13, 10, 0
+
+; Start of 64-bit kernel 
+
+.start64:
+
+		mov 	si, start64_msg
+		call 	write_str 
+
+		; need to implement 
+		jmp 	reboot 
+
+
+
+
+
+
+;============================================
 
 another_entry:
 
+		mov 	si, boot_vga_file_name
+		mov 	di, 0x8500 / 16
+		call 	load_file 
+
+		;init vga system 
+		call 	0x8500
+
 		mov 	si, new_message
 		call 	write_str
+
+		; Load boot loader config file 
+		mov 	si, config_file_name
+		mov 	di, 0x1000 / 16
+		call 	load_file 
+
+		; Parse config file 
+
+
+		call	parse_config
 
 
 
