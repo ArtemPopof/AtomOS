@@ -63,7 +63,8 @@ end virtual
 sector_per_track	dw ?
 head_count 			db ? 
 disk_id				db ?
-reboot_msg db "Rebooting. Press any key...", 13, 10, 0
+reboot_msg db ".", 13, 10, 0
+boot_file_name db "n", 0
 
 ;==================================
 
@@ -161,7 +162,7 @@ load_sector:
 .error:
 
 		call 	error
-		db 		"DISK ERROR", 13, 10, 0 
+		db 		"D", 13, 10, 0 
 
 @@:
 
@@ -195,84 +196,6 @@ load_sector:
 		pop 	si dx ax 
 		ret 		
 
-;==================================
-
-
-;===========ENTRY POINT============
-
-boot:
-
-		; Set up segment registers 
-		jmp 	0:@f
-
-	@@:
-		mov 	ax, cs
-		mov 	ds, ax 
-		mov 	es, ax 
-
-		; Set up stack 
-		mov 	ss, ax 
-		mov 	sp, $$
-
-		; allow interruptions 
-		sti 
-
-		; save load disk id 
-		mov 	[disk_id], dl
-
-		; get disk params with extended service
-		mov 	ah, 0x41 
-		mov 	bx, 0x55AA
-		int 	0x13 
-		jc 		@f 					; extended service is not supported 
-		mov 	byte[sector_per_track], 0xFF ; means that service is not supported 
-		jmp 	.disk_detected 
-
-@@:
-		; get disk params (old method)
-		mov 	ah, 0x08	
-		xor 	di, di
-		push 	es 	
-		int 	0x13 
-
-		pop 	es 
-		jc 		load_sector.error 	; some error occured 
-		inc 	dh					; head count starts from 1
-		mov 	[head_count], dh 
-		and 	cx, 111111b			; cx now is sector per track count
-		mov 	[sector_per_track], cx 
-
-.disk_detected:
-
-		xor 	dx, dx 
-		mov 	ax, 1
-		mov 	di, 0x7E00 			; load next sector 
-		call 	load_sector
-
-		; go to next segment of boot loader 
-		jmp 	0x7E00
-
-;==================================
-
-; Empty space and sign 
-rb 	510 - ($ - $$) 
-db 	0x55, 0xAA 
-
-jmp 	next_entry
-
-
-;===============DATA===============
-
-boot_msg 	db	"AtomOS version 0.03 boot loader...", 13, 10, 0
-boot_file_name db "boot.bin", 0
-load_msg_preffix db "Loading '", 0
-load_msg_suffix db 	"'...", 0
-ok_msg	db 	"OK", 13, 10, 0
-
-;==================================
-
-;=============ROUTINES=============
-
 ;------------------------
 ; find_file:
 ;
@@ -294,7 +217,7 @@ find_file:
 .not_found: ; EOL reached, it's very bad 
 
 		call 	error 
-		db 		"NOT FOUND", 13, 10, 0
+		db 		"N", 13, 10, 0
 
 @@:
 
@@ -390,87 +313,79 @@ load_file_data:
 		mov 	dx, [si]
 		jmp 	.load_list  
 
+;==================================
 
-;------------------------
-; split_file_name
-;
-; split file name with / 
-;	
-; arg: DS:SI - file name 
-; ret: ax - offset of end 
-;------------------------
 
-split_file_name:
+;===========ENTRY POINT============
 
-		push 	si 
+boot:
+
+		; Set up segment registers 
+		jmp 	0:@f
+
+	@@:
+		mov 	ax, cs
+		mov 	ds, ax 
+		mov 	es, ax 
+
+		; Set up stack 
+		mov 	ss, ax 
+		mov 	sp, $$
+
+		; allow interruptions 
+		sti 
+
+		; save load disk id 
+		mov 	[disk_id], dl
+
+		; get disk params with extended service
+		mov 	ah, 0x41 
+		mov 	bx, 0x55AA
+		int 	0x13 
+		jc 		@f 					; extended service is not supported 
+		mov 	byte[sector_per_track], 0xFF ; means that service is not supported 
+		jmp 	.disk_detected 
 
 @@:
-		lodsb 
-		cmp 	al, "/"
-		je 		@f 
-		jmp 	@b 
+		; get disk params (old method)
+		mov 	ah, 0x08	
+		xor 	di, di
+		push 	es 	
+		int 	0x13 
 
-@@:
-		mov 	byte[si - 1], 0
-		mov 	ax, si 
-		pop 	si 
-		ret  
+		pop 	es 
+		jc 		load_sector.error 	; some error occured 
+		inc 	dh					; head count starts from 1
+		mov 	[head_count], dh 
+		and 	cx, 111111b			; cx now is sector per track count
+		mov 	[sector_per_track], cx 
 
-;------------------------
-; load_file
-;
-; Load file with name DS:SI 
-; in DI:0 buffer 
-; 
-; ret: ax - number of loaded 
-; sectors 
-;------------------------
+.disk_detected:
 
-load_file:
-
-		push 	si 
-
-		mov 	si, load_msg_preffix 
-		call 	write_str
-
-		pop 	si 
-		call 	write_str 
-
-		push 	si 
-		mov 	si, load_msg_suffix
-		call 	write_str
-
-		pop 	si 
-
-		push 	bx si bp 
-
+		; load next sector to next 512 bytes
+		mov 	si, boot_file_name 
+		mov 	ax, word[fs_first_file]
 		mov 	dx, word[fs_first_file + 2]
-		mov 	ax, word[fs_first_file] 		; start searching in root folder
+		call 	find_file
 
-@@:
-		push 	ax 
-		call 	split_file_name 
-		mov 	bp, ax 
-		pop 	ax 
-		call 	find_file 
-		test 	byte[f_flags], 1				; dir?
-		jz 		@f 
-		mov 	si, bp 
-		mov 	dx, word[f_data + 2]
-		mov 	ax, word[f_data]
-		jmp 	@b 
-
-@@:	; file found, so load it 
-
-		mov 	bx, di 
+		mov 	bx, 0x7E00 / 16 
 		call 	load_file_data 
-		mov 	si, ok_msg 
-		call 	write_str
 
-		pop	 	bp si bx 
-		ret 
+		; go to next segment of boot loader 
+		jmp 	0x7E00
 
 ;==================================
+
+; Empty space and sign 
+rb 	510 - ($ - $$) 
+db 	0x55, 0xAA 
+
+jmp 	next_entry
+
+
+;===============DATA===============
+
+boot_msg 	db	"AtomOS version 0.03 boot loader...", 13, 10, 0
 
 ;==================================
 
@@ -483,36 +398,9 @@ next_entry:
 		mov 	si, boot_msg 
 		call 	write_str
 
-		mov 	si, boot_file_name 
-		mov 	di, 0x8000 / 16
-		call 	load_file
-
-
-		jmp 	0x8000
-
 
 		; Reboot now 
 		jmp 	reboot 
 
-		db 		0, 0, 0, 0
-
 	
 ;==================================
-
-;=========NOT PART OF THIS IMAGE, MUST BE CUT OUT=======
-
-org 	0x8000
-
-jmp 	another_entry
-
-new_message 	db 	'This is next file that loaded right into memory and being executed', 13, 10, 0
-
-
-another_entry:
-
-		mov 	si, new_message
-		call 	write_str
-
-
-
-		call 	reboot

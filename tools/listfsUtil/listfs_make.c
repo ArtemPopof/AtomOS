@@ -185,7 +185,7 @@ void get_disk_block(uint64 index) {
 
 void init_disk_map() {
 	int i;
-	fs_header->map_base = /* 1 + */ boot_loader_extra_blocks;
+	fs_header->map_base =  1 + boot_loader_extra_blocks;
 	fs_header->map_size = block_count / 8;
 	if (fs_header->map_size % block_size) fs_header->map_size += block_size;
 	fs_header->map_size /= block_size;
