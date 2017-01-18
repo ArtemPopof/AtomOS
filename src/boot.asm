@@ -511,7 +511,35 @@ new_message 	db 	'This is next file that loaded right into memory and being exec
 boot_vga_file_name db 'bootVga.bin', 0 
 config_file_name db "boot.cfg", 0
 start64_msg db 'Starting 64-bit kernel!...', 13, 10, 0
+start32_msg db 'Starting 32-bit kernel!...', 13, 10, 0
 start16_msg db 'Starting 16-bit kernel!...', 13, 10, 0
+		
+another_entry:
+
+		mov 	si, boot_vga_file_name
+		mov 	di, 0x8500 / 16
+		call 	load_file 
+
+		;init vga system 
+		call 	0x8500
+
+		mov 	si, new_message
+		call 	write_str
+
+		; Load boot loader config file 
+		mov 	si, config_file_name
+		mov 	di, 0x1000 / 16
+		call 	load_file 
+
+		; Parse config file 
+
+
+		call	parse_config
+
+
+
+		call 	reboot
+
 
 ;============routines==================
 
@@ -639,11 +667,6 @@ parse_config:
 
 		jmp 	0x9000
 
-; Start of 32-bit kernel 
-.start32:
-		call 	error 
-		db 		"Starting 32 bit kernels is not impelemented yet", 13, 10, 0
-
 ; Start of 64-bit kernel 
 
 .start64:
@@ -657,32 +680,68 @@ parse_config:
 
 
 
+; Start of 32-bit kernel 
+.start32:
+		
+		; Print message 
+		mov 	si, start32_msg
+		call 	write_str 
 
+		; Check that processor i386+
+		mov 	ax, 0x7202
+		push 	ax 
+		popf 	
+		pushf 
+		pop 	bx 
+		cmp 	ax, bx 
+		je 		@f 
+		call 	error 
+		db 		"Required i386 or better", 13, 10, 0
+
+@@:
+		; load GDTR
+		lgdt	[gdtr32]
+
+		cli 
+
+		; switch to protected mode 
+		mov 	eax, cr0 
+		or 		eax, 1 
+		mov 	cr0, eax 
+
+		; go to 32-bit code 
+		jmp 	8:start32 
+
+		; Segment Descriptor table for 32-bit kernel 
+		align 16
+
+		gdt32:
+
+				dq	0					; NULL - 0
+				dq 	0x00CF9A000000FFFF	; CODE - 8
+				dq 	0x00CF92000000FFFF 	; DATA - 16
+
+		gdtr32:
+
+				dw	$ - gdt32 - 1
+				dd 	gdt32 
+
+		; 32-bit code 
+		use32 
+
+start32:
+
+		; set up segregs and stack 
+
+		mov 	eax, 16 
+		mov 	ds, ax 
+		mov 	es, ax 
+		mov 	fs, ax 
+		mov 	gs, ax 
+		mov 	ss, ax 
+		movzx	esp, sp 
+
+		; end 
+		jmp 	$
 
 ;============================================
-
-another_entry:
-
-		mov 	si, boot_vga_file_name
-		mov 	di, 0x8500 / 16
-		call 	load_file 
-
-		;init vga system 
-		call 	0x8500
-
-		mov 	si, new_message
-		call 	write_str
-
-		; Load boot loader config file 
-		mov 	si, config_file_name
-		mov 	di, 0x1000 / 16
-		call 	load_file 
-
-		; Parse config file 
-
-
-		call	parse_config
-
-
-
-		call 	reboot
